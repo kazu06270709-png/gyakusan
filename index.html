@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B1913">
+<title>英数逆算プランナー</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<style>
+/* ===========================================================
+   黒板とチョーク — 教室の道具立てで組んだ配色
+   =========================================================== */
+:root{
+  --board:      #10231C;   /* 黒板の深緑 */
+  --board-deep: #0B1913;   /* 溝・影 */
+  --panel:      #142A22;   /* 板面より少し明るい面 */
+  --rule:       #1F3E33;   /* 罫線 */
+  --rule-soft:  #17332A;
+  --chalk:      #EFEDE4;   /* 白チョーク */
+  --chalk-dim:  #8FA79B;   /* 消しかけ */
+  --chalk-far:  #5B7267;   /* さらに薄い */
+  --yellow:     #F2C14E;   /* 黄チョーク＝締切・今日 */
+  --red:        #E0705C;   /* 赤チョーク＝遅れ・警告 */
+  --green:      #7FC8A9;   /* 緑チョーク＝完了 */
+  --tap: 44px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--board-deep);
+  color:var(--chalk);
+  font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Kaku Gothic ProN",sans-serif;
+  font-size:15px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  padding-bottom:calc(64px + env(safe-area-inset-bottom));
+  overscroll-behavior-y:contain;
+}
+/* 方眼の板面 */
+#app{
+  min-height:100vh;
+  background:
+    linear-gradient(transparent 23px, var(--rule-soft) 23px, transparent 24px) 0 0/100% 24px,
+    var(--board);
+  padding:calc(env(safe-area-inset-top) + 14px) 16px 24px;
+  max-width:560px;margin:0 auto;
+}
+h1,h2,h3{margin:0;font-weight:700;letter-spacing:.01em}
+
+/* 見出し＝黒板に書いた小見出し */
+.eyebrow{
+  font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--chalk-far);font-weight:700;margin:0 0 8px;
+}
+.num{font-family:ui-monospace,"Roboto Mono","DejaVu Sans Mono",monospace;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+
+/* ---------- カウントダウン帯（画面の主題） ---------- */
+.countdown{border-bottom:1px solid var(--rule);padding-bottom:18px;margin-bottom:20px}
+.cd-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.cd-big{font-size:60px;font-weight:800;line-height:.9;color:var(--yellow)}
+.cd-unit{font-size:15px;color:var(--chalk-dim);font-weight:600}
+.cd-label{font-size:13px;color:var(--chalk-dim);margin-top:8px}
+.cd-none{color:var(--chalk-dim);font-size:14px}
+.gaps{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.gap{
+  flex:1 1 130px;border:1px solid var(--rule);border-radius:3px;
+  padding:9px 11px;background:var(--panel);
+}
+.gap b{display:block;font-size:11px;letter-spacing:.14em;color:var(--chalk-far);font-weight:700}
+.gap .v{font-size:22px;font-weight:700;margin-top:2px}
+.gap .v small{font-size:12px;color:var(--chalk-dim);font-weight:600;margin-left:3px}
+
+/* ---------- カード・タスク ---------- */
+section{margin-bottom:26px}
+.card{border:1px solid var(--rule);border-radius:4px;background:var(--panel);padding:14px;margin-bottom:10px}
+
+.task{
+  display:flex;gap:12px;align-items:flex-start;
+  border:1px solid var(--rule);border-left:3px solid var(--rule);
+  border-radius:4px;background:var(--panel);
+  padding:12px 13px;margin-bottom:9px;
+  transition:border-color .16s,opacity .16s;
+}
+.task[data-w="5"],.task[data-w="4"]{border-left-color:var(--yellow)}
+.task[data-w="3"]{border-left-color:var(--chalk-dim)}
+.task.done{opacity:.42;border-left-color:var(--green)}
+.task.done .t-title{text-decoration:line-through;text-decoration-thickness:1px}
+.check{
+  flex:0 0 26px;height:26px;margin-top:1px;border:1.5px solid var(--chalk-dim);
+  border-radius:3px;background:none;cursor:pointer;position:relative;padding:0;
+}
+.check[aria-pressed="true"]{border-color:var(--green)}
+.check[aria-pressed="true"]::after{
+  content:"";position:absolute;left:8px;top:3px;width:7px;height:13px;
+  border:solid var(--green);border-width:0 2.5px 2.5px 0;transform:rotate(42deg);
+}
+.t-body{flex:1;min-width:0}
+.t-title{font-size:15px;font-weight:700;line-height:1.35}
+.t-meta{font-size:12.5px;color:var(--chalk-dim);margin-top:3px}
+.t-range{font-family:ui-monospace,"Roboto Mono",monospace;color:var(--chalk);font-weight:600}
+.t-sub{font-size:10px;letter-spacing:.16em;color:var(--chalk-far);font-weight:700}
+
+/* ---------- ストリーク（正の字） ---------- */
+.streak{border-top:1px solid var(--rule);padding-top:18px;display:flex;gap:16px;align-items:center}
+.streak-n{font-size:40px;font-weight:800;line-height:1;color:var(--chalk)}
+.streak-n small{font-size:13px;color:var(--chalk-dim);font-weight:600;margin-left:4px}
+#tally{display:block;max-width:100%;height:auto}
+
+/* ---------- 逆算メーター ---------- */
+#meter{display:block;width:100%;height:auto;border:1px solid var(--rule);border-radius:4px;background:var(--panel)}
+
+/* ---------- フォーム ---------- */
+label{display:block;font-size:11px;letter-spacing:.14em;color:var(--chalk-far);font-weight:700;margin:12px 0 5px}
+input,select,textarea{
+  width:100%;background:var(--board-deep);color:var(--chalk);
+  border:1px solid var(--rule);border-radius:3px;padding:10px 11px;
+  font-size:16px;font-family:inherit;min-height:var(--tap);
+}
+input[type=number]{font-family:ui-monospace,"Roboto Mono",monospace}
+.row{display:flex;gap:9px}
+.row>*{flex:1;min-width:0}
+button{font-family:inherit}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  min-height:var(--tap);padding:0 18px;border-radius:3px;
+  border:1px solid var(--chalk-dim);background:none;color:var(--chalk);
+  font-size:14px;font-weight:700;cursor:pointer;width:100%;margin-top:14px;
+}
+.btn.primary{background:var(--yellow);border-color:var(--yellow);color:#17251C}
+.btn.ghost{border-color:var(--rule);color:var(--chalk-dim);font-weight:600}
+.btn.danger{border-color:var(--red);color:var(--red)}
+.btn:active{transform:translateY(1px)}
+.btn-sm{width:auto;min-height:34px;padding:0 12px;font-size:12.5px;margin-top:0}
+
+/* ---------- 一覧項目 ---------- */
+.item{border:1px solid var(--rule);border-radius:4px;background:var(--panel);padding:12px 13px;margin-bottom:9px}
+.item-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.item-title{font-weight:700;font-size:15px}
+.item-sub{font-size:12.5px;color:var(--chalk-dim);margin-top:2px}
+.unit-line{display:flex;align-items:center;gap:9px;padding:8px 0;border-top:1px dashed var(--rule)}
+.unit-line .nm{flex:1;min-width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wt{font-size:12px;color:var(--yellow);letter-spacing:.1em;flex:0 0 auto}
+.pg{font-family:ui-monospace,"Roboto Mono",monospace;font-size:12px;color:var(--chalk-dim);flex:0 0 auto}
+.bar{height:3px;background:var(--rule);border-radius:2px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--green)}
+.x{background:none;border:none;color:var(--chalk-far);font-size:19px;line-height:1;padding:6px 4px;cursor:pointer;flex:0 0 auto}
+.fold{margin-top:10px;border-top:1px dashed var(--rule)}
+.fold>summary{
+  list-style:none;cursor:pointer;padding:11px 2px 3px;
+  font-size:12px;letter-spacing:.12em;font-weight:700;color:var(--chalk-dim);
+}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:"＋ "}
+.fold[open]>summary::before{content:"− "}
+
+/* ---------- 告知・空状態 ---------- */
+.notice{
+  border:1px solid var(--yellow);border-radius:4px;background:rgba(242,193,78,.09);
+  padding:12px 13px;margin-bottom:16px;font-size:13.5px;
+}
+.notice .btn{margin-top:10px}
+.empty{border:1px dashed var(--rule);border-radius:4px;padding:22px 16px;text-align:center;color:var(--chalk-dim);font-size:13.5px}
+.empty b{display:block;color:var(--chalk);font-size:15px;margin-bottom:5px}
+
+/* ---------- 週プラン ---------- */
+.wk{border-top:1px solid var(--rule);padding:12px 0}
+.wk-h{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--chalk-dim)}
+.wk-h b{color:var(--chalk);font-size:14px}
+.wk-list{margin:8px 0 0;padding:0;list-style:none;font-size:13px;color:var(--chalk-dim)}
+.wk-list li{padding:3px 0}
+.wk-list .d{font-family:ui-monospace,"Roboto Mono",monospace;color:var(--chalk-far);margin-right:8px}
+
+/* ---------- タブ ---------- */
+nav{
+  position:fixed;left:0;right:0;bottom:0;z-index:10;
+  display:flex;background:var(--board-deep);border-top:1px solid var(--rule);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+nav button{
+  flex:1;background:none;border:none;color:var(--chalk-far);
+  padding:11px 4px 12px;font-size:11px;font-weight:700;letter-spacing:.08em;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:4px;min-height:56px;
+}
+nav button .g{font-size:16px;line-height:1;font-weight:800}
+nav button[aria-current="page"]{color:var(--yellow)}
+
+:focus-visible{outline:2px solid var(--yellow);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<nav>
+  <button data-tab="today"  aria-current="page"><span class="g">今</span>今日</button>
+  <button data-tab="plan"><span class="g">逆</span>逆算</button>
+  <button data-tab="books"><span class="g">材</span>教材</button>
+  <button data-tab="config"><span class="g">設</span>設定</button>
+</nav>
+
+<script>
+"use strict";
+/* =========================================================
+   保存
+   ========================================================= */
+const KEY = "gyakusan.v1";
+const DEFAULTS = {
+  goals: [],
+  books: [],
+  tasks: [],
+  settings: { weekdayPages: 12, holidayPages: 24, maxTasksPerDay: 3, restDays: [], bufferDays: 7, minChunk: 3 },
+  lastPlan: null
+};
+let db = load();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(!raw) return structuredClone(DEFAULTS);
+    const d = JSON.parse(raw);
+    return Object.assign(structuredClone(DEFAULTS), d, {
+      settings: Object.assign(structuredClone(DEFAULTS.settings), d.settings || {})
+    });
+  }catch(e){
+    console.error(e);
+    return structuredClone(DEFAULTS);
+  }
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(db)); }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+/* =========================================================
+   日付ユーティリティ（すべてローカル時間の YYYY-MM-DD 文字列で扱う）
+   ========================================================= */
+const WD = ["日","月","火","水","木","金","土"];
+function ymd(d){
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+function parse(s){ const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); }
+function today(){ return ymd(new Date()); }
+function addDays(s, n){ const d = parse(s); d.setDate(d.getDate()+n); return ymd(d); }
+function diffDays(a, b){ return Math.round((parse(b) - parse(a)) / 86400000); }
+function dow(s){ return parse(s).getDay(); }
+function fmtMD(s){ const d = parse(s); return (d.getMonth()+1) + "/" + d.getDate(); }
+function fmtFull(s){ const d = parse(s); return (d.getMonth()+1) + "月" + d.getDate() + "日(" + WD[d.getDay()] + ")"; }
+/* 週の始まり＝月曜 */
+function weekStart(s){ const d = parse(s); const off = (d.getDay() + 6) % 7; return addDays(s, -off); }
+
+const SUBJ = { english: "英語", math: "数学" };
+
+/* =========================================================
+   逆算プランの生成
+   優先度 = 重み × (残ページ ÷ 目標日までの残日数)
+   重要度と締切の切迫度をどちらも効かせる
+   ========================================================= */
+/* 締切は模試日そのものではなく「仕上げ日」＝模試の bufferDays 日前。
+   直前は総復習に空けておく。 */
+function deadlineFor(subject, from){
+  const buf = Math.max(0, Number(db.settings.bufferDays) || 0);
+  const future = db.goals
+    .filter(g => g.subject === subject && diffDays(from, g.examDate) >= 0)
+    .sort((a,b) => a.examDate.localeCompare(b.examDate));
+  if(!future.length) return null;
+  const fin = addDays(future[0].examDate, -buf);
+  return fin > from ? fin : future[0].examDate;
+}
+
+function dailyCap(dateStr){
+  const s = db.settings;
+  if(s.restDays && s.restDays.includes(dow(dateStr))) return 0;
+  const weekend = dow(dateStr) === 0 || dow(dateStr) === 6;
+  return Math.max(0, weekend ? s.holidayPages : s.weekdayPages);
+}
+
+function generatePlan(){
+  const t0 = today();
+
+  // 完了済みタスクだけ履歴として残す。未消化はここで消え、以下で組み直される
+  db.tasks = db.tasks.filter(t => t.done);
+
+  // 仮想の進捗カーソルを立てて日ごとに配っていく
+  const sim = [];
+  for(const b of db.books){
+    for(const u of (b.units||[])){
+      if(u.status === "done") continue;
+      const total = Number(u.totalPages)||0;
+      const cur = Math.min(Number(u.currentPage)||0, total);
+      if(total - cur <= 0) continue;
+      sim.push({
+        bookId: b.id, bookTitle: b.title, subject: b.subject,
+        unitId: u.id, unitName: u.name, weight: Number(u.weight)||3,
+        cursor: cur, total: total,
+        deadline: deadlineFor(b.subject, t0) || addDays(t0, 56)
+      });
+    }
+  }
+  if(!sim.length){ db.lastPlan = t0; save(); return 0; }
+
+  const HORIZON = 220;
+  const maxTasks = Math.max(1, Number(db.settings.maxTasksPerDay)||3);
+  const minChunk = Math.max(1, Number(db.settings.minChunk)||3);
+  const out = [];
+  sim.forEach(u => u.debt = 0);
+
+  for(let i = 0; i < HORIZON; i++){
+    const date = addDays(t0, i);
+
+    const live = sim.filter(u => u.total - u.cursor > 0);
+    if(!live.length) break;
+
+    // その日時点で「仕上げ日までに終わらせるには1日何ページ必要か」を出す。
+    // 上限いっぱいまで前倒しはせず、仕上げ日ちょうどに終わるペースで配る。
+    live.forEach(u => {
+      const left = Math.max(1, diffDays(date, u.deadline));
+      u.need = (u.total - u.cursor) / left;
+      u.debt += u.need;
+      u.score = u.weight * u.need;
+    });
+
+    const cap = dailyCap(date);
+    if(cap <= 0) continue;   // 休養日でもペースの借りは溜まっていく
+
+    // ペースが1日1ページを超える単元は毎日。それ未満は minChunk 溜まってから
+    // まとめて出す。1ページだけのタスクが延々並ぶのを避ける。
+    const ready = live
+      .filter(u => u.need >= 1 || u.debt >= minChunk || (u.total - u.cursor) <= minChunk)
+      .sort((a,b) => b.score - a.score)
+      .slice(0, maxTasks);
+
+    let spent = 0;
+    ready.forEach(u => {
+      const remainCap = cap - spent;
+      if(remainCap <= 0) return;
+      let n = u.need >= 1 ? Math.ceil(u.need) : Math.floor(u.debt);
+      n = Math.max(1, Math.min(n, remainCap, u.total - u.cursor));
+      const from = u.cursor + 1, to = u.cursor + n;
+      out.push({
+        id: uid(), date, bookId: u.bookId, unitId: u.unitId,
+        bookTitle: u.bookTitle, unitName: u.unitName, subject: u.subject,
+        weight: u.weight, fromPage: from, toPage: to, pages: n,
+        range: from === to ? "p." + from : "p." + from + "–" + to, done: false
+      });
+      u.cursor += n;
+      u.debt -= n;
+      spent += n;
+    });
+  }
+
+  db.tasks = db.tasks.concat(out);
+  db.tasks.sort((a,b) => a.date.localeCompare(b.date));
+  db.lastPlan = t0;
+  save();
+  return out.length;
+}
+
+/* =========================================================
+   タスク完了 / 取り消し（単元の現在ページを動かす唯一の経路）
+   ========================================================= */
+function toggleTask(id){
+  const t = db.tasks.find(x => x.id === id);
+  if(!t) return;
+  const u = findUnit(t.bookId, t.unitId);
+  t.done = !t.done;
+  if(u){
+    if(t.done){
+      u.currentPage = Math.min(Number(u.totalPages)||0, Math.max(Number(u.currentPage)||0, t.toPage));
+      if(u.currentPage >= (Number(u.totalPages)||0)) u.status = "done";
+      else u.status = "in_progress";
+    }else{
+      u.currentPage = Math.max(0, Math.min(Number(u.currentPage)||0, t.fromPage - 1));
+      u.status = u.currentPage > 0 ? "in_progress" : "todo";
+    }
+  }
+  save();
+  render();
+}
+
+function findUnit(bookId, unitId){
+  const b = db.books.find(x => x.id === bookId);
+  return b ? (b.units||[]).find(u => u.id === unitId) : null;
+}
+
+/* =========================================================
+   ストリーク
+   タスクのある日をすべて消化したら達成。タスクのない日は素通り
+   ========================================================= */
+function streakDays(){
+  const byDate = {};
+  for(const t of db.tasks){
+    (byDate[t.date] = byDate[t.date] || []).push(t);
+  }
+  let n = 0, cur = today();
+  // 今日がまだ途中なら、昨日から数え始める
+  const todayTasks = byDate[cur] || [];
+  if(!(todayTasks.length && todayTasks.every(t => t.done))) cur = addDays(cur, -1);
+  for(let i = 0; i < 400; i++){
+    const list = byDate[cur];
+    if(list && list.length){
+      if(list.every(t => t.done)) n++;
+      else break;
+    }
+    cur = addDays(cur, -1);
+  }
+  return n;
+}
+
+function overdueCount(){
+  const t0 = today();
+  return db.tasks.filter(t => !t.done && t.date < t0).length;
+}
+
+/* =========================================================
+   Canvas — 正の字のタリー
+   ========================================================= */
+function drawTally(cv, n){
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cols = Math.min(6, Math.max(1, Math.ceil(n / 5) || 1));
+  const cw = 34, gap = 13, pad = 4;
+  const w = cols * cw + (cols - 1) * gap + pad * 2;
+  const h = 46;
+  cv.width = w * dpr; cv.height = h * dpr;
+  cv.style.width = w + "px"; cv.style.height = h + "px";
+  const c = cv.getContext("2d");
+  c.scale(dpr, dpr);
+  c.clearRect(0,0,w,h);
+  c.lineCap = "round";
+  c.lineWidth = 2.4;
+
+  const full = Math.floor(n / 5), rest = n % 5;
+  const shown = Math.min(cols, full + (rest ? 1 : 0));
+  const skipped = Math.max(0, Math.ceil(n/5) - cols);
+
+  for(let i = 0; i < shown; i++){
+    const idx = i + skipped;
+    const strokes = (idx < full) ? 5 : rest;
+    drawSei(c, pad + i * (cw + gap), 7, cw, h - 16, strokes,
+            idx < full ? "#EFEDE4" : "#F2C14E");
+  }
+  if(!n){
+    c.font = "600 12px system-ui, sans-serif";
+    c.fillStyle = "#5B7267";
+    c.fillText("まだ0日", pad, 26);
+  }
+}
+// 正 = 一 丨 一 丨 一（筆順どおり5画）
+function drawSei(c, x, y, w, h, strokes, color){
+  const cx = x + w * 0.52, my = y + h * 0.50;
+  const seg = [
+    [[x + w*0.18, y], [x + w*0.86, y]],                 // ① 上の横
+    [[cx, y], [cx, y + h]],                             // ② 中央の縦
+    [[x + w*0.10, my], [cx, my]],                       // ③ 中ほどの短い横
+    [[x + w*0.10, my], [x + w*0.10, y + h]],            // ④ 左の縦
+    [[x - w*0.04, y + h], [x + w*1.04, y + h]]          // ⑤ 下の横
+  ];
+  c.strokeStyle = color;
+  for(let i = 0; i < strokes; i++){
+    const [a, b] = seg[i];
+    c.globalAlpha = 0.92;
+    c.beginPath();
+    c.moveTo(a[0], a[1]);
+    c.lineTo(b[0] + (Math.random()-0.5), b[1] + (Math.random()-0.5));
+    c.stroke();
+  }
+  c.globalAlpha = 1;
+}
+
+/* =========================================================
+   Canvas — 逆算メーター（週ごとの計画量と消化量）
+   ========================================================= */
+function drawMeter(cv){
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = cv.clientWidth || 320, h = 150;
+  cv.width = w * dpr; cv.height = h * dpr;
+  cv.style.height = h + "px";
+  const c = cv.getContext("2d");
+  c.scale(dpr, dpr);
+  c.clearRect(0,0,w,h);
+
+  const t0 = today(), w0 = weekStart(t0);
+  const weeks = [];
+  for(let i = 0; i < 14; i++){
+    const ws = addDays(w0, i * 7), we = addDays(ws, 6);
+    const list = db.tasks.filter(t => t.date >= ws && t.date <= we);
+    weeks.push({
+      ws, we,
+      plan: list.reduce((s,t) => s + t.pages, 0),
+      done: list.filter(t => t.done).reduce((s,t) => s + t.pages, 0),
+      exams: db.goals.filter(g => g.examDate >= ws && g.examDate <= we)
+    });
+  }
+  const max = Math.max(1, ...weeks.map(x => x.plan));
+  const padL = 6, padB = 30, padT = 26;
+  const bw = (w - padL*2) / weeks.length;
+  const inner = bw * 0.62;
+  const base = h - padB;
+
+  // 基準線
+  c.strokeStyle = "#1F3E33"; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(0, base + .5); c.lineTo(w, base + .5); c.stroke();
+
+  weeks.forEach((wk, i) => {
+    const x = padL + i * bw + (bw - inner) / 2;
+    const bh = (wk.plan / max) * (base - padT);
+    // 計画
+    c.fillStyle = "#1F3E33";
+    c.fillRect(x, base - bh, inner, bh);
+    // 消化
+    const dh = wk.plan ? (wk.done / wk.plan) * bh : 0;
+    c.fillStyle = i === 0 ? "#F2C14E" : "#7FC8A9";
+    c.fillRect(x, base - dh, inner, dh);
+    // 模試の位置に縦線
+    if(wk.exams.length){
+      c.strokeStyle = "#E0705C"; c.lineWidth = 1.5;
+      c.setLineDash([3,3]);
+      c.beginPath(); c.moveTo(x + inner/2, padT - 10); c.lineTo(x + inner/2, base); c.stroke();
+      c.setLineDash([]);
+      c.fillStyle = "#E0705C";
+      c.font = "700 9px system-ui, sans-serif";
+      c.textAlign = "center";
+      c.fillText("模試", x + inner/2, padT - 13);
+    }
+    // 週ラベル（隔週）
+    if(i % 2 === 0){
+      c.fillStyle = i === 0 ? "#F2C14E" : "#5B7267";
+      c.font = "600 9px ui-monospace, monospace";
+      c.textAlign = "center";
+      c.fillText(fmtMD(wk.ws), x + inner/2, base + 13);
+      if(i === 0){
+        c.font = "700 8px system-ui, sans-serif";
+        c.fillText("今週", x + inner/2, base + 24);
+      }
+    }
+  });
+  c.textAlign = "left";
+}
+
+/* =========================================================
+   描画
+   ========================================================= */
+let tab = "today";
+let openBook = null;   // 単元追加フォームを開いたままにする参考書
+const app = document.getElementById("app");
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+
+function render(){
+  document.querySelectorAll("nav button").forEach(b =>
+    b.setAttribute("aria-current", b.dataset.tab === tab ? "page" : "false"));
+  app.innerHTML = ({ today: viewToday, plan: viewPlan, books: viewBooks, config: viewConfig })[tab]();
+  window.scrollTo(0,0);
+  if(tab === "today"){
+    const cv = document.getElementById("tally");
+    if(cv) drawTally(cv, streakDays());
+  }
+  if(tab === "plan"){
+    const cv = document.getElementById("meter");
+    if(cv) drawMeter(cv);
+  }
+}
+
+/* ---------- 今日 ---------- */
+function viewToday(){
+  const t0 = today();
+  const list = db.tasks.filter(t => t.date === t0).sort((a,b) => b.weight - a.weight);
+  const doneN = list.filter(t => t.done).length;
+  const od = overdueCount();
+  const st = streakDays();
+
+  let h = "";
+
+  // カウントダウン
+  const upcoming = db.goals.filter(g => diffDays(t0, g.examDate) >= 0)
+                           .sort((a,b) => a.examDate.localeCompare(b.examDate));
+  h += '<div class="countdown">';
+  if(upcoming.length){
+    const g = upcoming[0];
+    const d = diffDays(t0, g.examDate);
+    const wk = Math.floor(d / 7), rd = d % 7;
+    h += '<p class="eyebrow">次の模試まで</p>';
+    h += '<div class="cd-row"><span class="cd-big num">' + wk + '</span><span class="cd-unit">週</span>'
+       + '<span class="cd-big num" style="font-size:34px">' + rd + '</span><span class="cd-unit">日</span></div>';
+    h += '<div class="cd-label">' + fmtFull(g.examDate) + ' ・ ' + esc(g.name || "模試") + '</div>';
+    const sameDay = upcoming.filter(x => x.examDate === g.examDate);
+    h += '<div class="gaps">' + sameDay.map(x =>
+      '<div class="gap"><b>' + SUBJ[x.subject] + '</b><div class="v num">'
+      + x.currentScore + ' <small>→</small> ' + x.targetScore
+      + ' <small>あと' + Math.max(0, x.targetScore - x.currentScore) + '</small></div></div>').join("") + '</div>';
+  }else{
+    h += '<p class="eyebrow">次の模試まで</p><p class="cd-none">模試の日程がまだ入っていません。「逆算」タブで登録すると、ここから逆算が始まります。</p>';
+  }
+  h += '</div>';
+
+  // 積み残し
+  if(od > 0){
+    h += '<div class="notice"><b>' + od + '件の積み残しがあります。</b><br>'
+       + '重要度と模試までの残り日数で組み直します。未消化のページは消えません。'
+       + '<button class="btn primary" data-act="regen">プランを組み直す</button></div>';
+  }
+
+  // 今日のタスク
+  h += '<section><p class="eyebrow">' + fmtFull(t0) + ' ・ ' + doneN + '/' + list.length + ' 消化</p>';
+  if(!list.length){
+    h += db.books.length
+      ? '<div class="empty"><b>今日の割り当てはありません</b>「逆算」タブでプランを作成してください。</div>'
+      : '<div class="empty"><b>まず教材を登録する</b>参考書と単元を入れると、模試日から逆算して日々の範囲が決まります。</div>';
+  }else{
+    h += list.map(t =>
+      '<div class="task' + (t.done ? ' done' : '') + '" data-w="' + t.weight + '">'
+      + '<button class="check" aria-pressed="' + t.done + '" data-act="toggle" data-id="' + t.id + '" aria-label="完了にする"></button>'
+      + '<div class="t-body">'
+      + '<div class="t-sub">' + SUBJ[t.subject] + ' ・ 重要度 ' + t.weight + '</div>'
+      + '<div class="t-title">' + esc(t.unitName) + '</div>'
+      + '<div class="t-meta">' + esc(t.bookTitle) + ' <span class="t-range">' + t.range + '</span> ・ ' + t.pages + 'p</div>'
+      + '</div></div>').join("");
+  }
+  h += '</section>';
+
+  // ストリーク
+  h += '<div class="streak"><div><p class="eyebrow">連続達成</p>'
+     + '<div class="streak-n num">' + st + '<small>日</small></div></div>'
+     + '<canvas id="tally"></canvas></div>';
+
+  return h;
+}
+
+/* ---------- 逆算 ---------- */
+function viewPlan(){
+  const t0 = today();
+  let h = '<p class="eyebrow">逆算メーター</p>';
+  h += '<canvas id="meter"></canvas>';
+  h += '<p class="item-sub" style="margin:7px 0 0">薄い柱が週の計画量、色のついた部分が消化済み。赤い破線が模試の週です。</p>';
+  h += '<button class="btn primary" data-act="regen">プランを組み直す</button>';
+  if(db.lastPlan) h += '<p class="item-sub" style="text-align:center;margin-top:6px">最終作成 ' + fmtFull(db.lastPlan) + '</p>';
+
+  // 週別
+  const upcoming = db.tasks.filter(t => t.date >= t0);
+  if(upcoming.length){
+    h += '<section style="margin-top:26px"><p class="eyebrow">これからの週</p>';
+    const byWeek = {};
+    upcoming.forEach(t => { (byWeek[weekStart(t.date)] = byWeek[weekStart(t.date)] || []).push(t); });
+    Object.keys(byWeek).sort().slice(0,6).forEach((ws, i) => {
+      const list = byWeek[ws];
+      const pages = list.reduce((s,t) => s + t.pages, 0);
+      h += '<div class="wk"><div class="wk-h"><b>' + (i === 0 ? '今週' : fmtMD(ws) + 'の週') + '</b><span>'
+         + list.length + 'タスク ・ ' + pages + 'p</span></div><ul class="wk-list">';
+      const agg = {};
+      list.forEach(t => {
+        const k = t.bookTitle + " / " + t.unitName;
+        agg[k] = (agg[k] || 0) + t.pages;
+      });
+      Object.keys(agg).slice(0,6).forEach(k =>
+        h += '<li><span class="d">' + agg[k] + 'p</span>' + esc(k) + '</li>');
+      h += '</ul></div>';
+    });
+    h += '</section>';
+  }
+
+  // 模試登録
+  h += '<section style="margin-top:26px"><p class="eyebrow">模試と目標点</p>';
+  const gs = db.goals.slice().sort((a,b) => a.examDate.localeCompare(b.examDate));
+  if(!gs.length){
+    h += '<div class="empty"><b>模試が未登録です</b>日程を入れると、そこから逆算が始まります。</div>';
+  }else{
+    h += gs.map(g =>
+      '<div class="item"><div class="item-head"><div>'
+      + '<div class="item-title">' + esc(g.name || "模試") + ' ・ ' + SUBJ[g.subject] + '</div>'
+      + '<div class="item-sub">' + fmtFull(g.examDate) + ' ・ 現在 ' + g.currentScore + ' → 目標 ' + g.targetScore + '</div>'
+      + '</div><button class="x" data-act="delgoal" data-id="' + g.id + '" aria-label="削除">×</button></div></div>').join("");
+  }
+  h += '<div class="card" style="margin-top:12px">'
+     + '<label for="g-name">模試の名前</label><input id="g-name" placeholder="第2回 全統記述模試">'
+     + '<div class="row"><div><label for="g-date">実施日</label><input id="g-date" type="date" value="' + addDays(t0, 60) + '"></div>'
+     + '<div><label for="g-subj">科目</label><select id="g-subj"><option value="english">英語</option><option value="math">数学</option></select></div></div>'
+     + '<div class="row"><div><label for="g-cur">現在の点</label><input id="g-cur" type="number" inputmode="numeric" value="60"></div>'
+     + '<div><label for="g-tgt">目標点</label><input id="g-tgt" type="number" inputmode="numeric" value="68"></div></div>'
+     + '<button class="btn" data-act="addgoal">模試を追加する</button></div></section>';
+
+  return h;
+}
+
+/* ---------- 教材 ---------- */
+function viewBooks(){
+  let h = '<p class="eyebrow">参考書と単元</p>';
+  if(!db.books.length){
+    h += '<div class="empty"><b>教材がありません</b>参考書を追加し、単元ごとにページ数と重要度を入れてください。</div>';
+  }
+  h += db.books.map(b => {
+    const units = b.units || [];
+    const tot = units.reduce((s,u) => s + (Number(u.totalPages)||0), 0);
+    const cur = units.reduce((s,u) => s + Math.min(Number(u.currentPage)||0, Number(u.totalPages)||0), 0);
+    const pct = tot ? Math.round(cur / tot * 100) : 0;
+    return '<div class="item"><div class="item-head"><div>'
+      + '<div class="item-title">' + esc(b.title) + '</div>'
+      + '<div class="item-sub">' + SUBJ[b.subject] + ' ・ ' + units.length + '単元 ・ ' + cur + '/' + tot + 'p（' + pct + '%）</div>'
+      + '</div><button class="x" data-act="delbook" data-id="' + b.id + '" aria-label="削除">×</button></div>'
+      + '<div class="bar"><i style="width:' + pct + '%"></i></div>'
+      + units.map(u => {
+          const ut = Number(u.totalPages)||0, uc = Math.min(Number(u.currentPage)||0, ut);
+          return '<div class="unit-line"><span class="wt">' + "●".repeat(u.weight) + "○".repeat(5-u.weight) + '</span>'
+            + '<span class="nm">' + esc(u.name) + '</span>'
+            + '<span class="pg">' + uc + '/' + ut + '</span>'
+            + '<button class="x" data-act="delunit" data-id="' + b.id + '" data-uid="' + u.id + '" aria-label="削除">×</button></div>';
+        }).join("")
+      + '<details class="fold"' + (openBook === b.id ? ' open' : '') + '><summary>単元を追加</summary><div class="card" style="margin:8px 0 0;background:var(--board-deep)">'
+      + '<label>単元名</label><input class="u-name" data-book="' + b.id + '" placeholder="二次関数">'
+      + '<div class="row"><div><label>重要度 1–5</label><input class="u-w" data-book="' + b.id + '" type="number" inputmode="numeric" min="1" max="5" value="3"></div>'
+      + '<div><label>総ページ</label><input class="u-tp" data-book="' + b.id + '" type="number" inputmode="numeric" value="40"></div>'
+      + '<div><label>済ページ</label><input class="u-cp" data-book="' + b.id + '" type="number" inputmode="numeric" value="0"></div></div>'
+      + '<button class="btn ghost" data-act="addunit" data-id="' + b.id + '">この単元を追加</button></div></details>'
+      + '</div>';
+  }).join("");
+
+  h += '<div class="card" style="margin-top:16px"><p class="eyebrow">参考書を追加</p>'
+     + '<label for="b-title">書名</label><input id="b-title" placeholder="システム英単語">'
+     + '<label for="b-subj">科目</label><select id="b-subj"><option value="english">英語</option><option value="math">数学</option></select>'
+     + '<button class="btn" data-act="addbook">参考書を追加する</button></div>';
+  return h;
+}
+
+/* ---------- 設定 ---------- */
+function viewConfig(){
+  const s = db.settings;
+  let h = '<p class="eyebrow">1日にこなせる量</p><div class="card">'
+    + '<p class="item-sub" style="margin:0 0 4px">ここは上限です。仕上げ日ちょうどに終わるペースで配分し、上限まで前倒しはしません。上限を超えるときだけ、重要度の高い単元が優先されます。</p>'
+    + '<div class="row"><div><label for="s-wd">平日の上限ページ</label><input id="s-wd" type="number" inputmode="numeric" value="' + s.weekdayPages + '"></div>'
+    + '<div><label for="s-hd">休日の上限ページ</label><input id="s-hd" type="number" inputmode="numeric" value="' + s.holidayPages + '"></div></div>'
+    + '<div class="row"><div><label for="s-mt">1日のタスク数の上限</label><input id="s-mt" type="number" inputmode="numeric" min="1" max="6" value="' + s.maxTasksPerDay + '"></div>'
+    + '<div><label for="s-mc">1タスクの最小ページ</label><input id="s-mc" type="number" inputmode="numeric" min="1" max="20" value="' + s.minChunk + '"></div></div>'
+    + '<label for="s-bd">模試の何日前に一周終えるか</label><input id="s-bd" type="number" inputmode="numeric" min="0" max="60" value="' + s.bufferDays + '">'
+    + '<p class="item-sub" style="margin:5px 0 0">この日数だけ手前を仕上げ日にして逆算します。直前は総復習に空きます。</p>'
+    + '<label>完全に休む曜日</label><div class="row" style="gap:5px">'
+    + WD.map((d,i) => '<button class="btn btn-sm ' + (s.restDays.includes(i) ? 'primary' : 'ghost') + '" data-act="rest" data-d="' + i + '" aria-pressed="' + s.restDays.includes(i) + '" style="flex:1;padding:0">' + d + '</button>').join("")
+    + '</div>'
+    + '<button class="btn primary" data-act="savecfg">保存してプランを組み直す</button></div>';
+
+  h += '<section style="margin-top:26px"><p class="eyebrow">データ</p><div class="card">'
+    + '<p class="item-sub" style="margin:0">端末のLocalStorageにだけ保存されます。機種変更やブラウザのデータ削除に備えて、ときどき書き出してください。</p>'
+    + '<button class="btn ghost" data-act="export">JSONに書き出す</button>'
+    + '<button class="btn ghost" data-act="import">JSONから読み込む</button>'
+    + '<button class="btn danger" data-act="reset">すべて消去する</button></div></section>';
+
+  h += '<section style="margin-top:26px"><p class="eyebrow">このアプリについて</p><div class="card">'
+    + '<p class="item-sub" style="margin:0">英数逆算プランナー Phase 1（計画とタスク）。'
+    + '模試分析・AIアドバイス・演習・通知は Phase 2 以降で追加します。</p></div></section>';
+  return h;
+}
+
+/* =========================================================
+   操作
+   ========================================================= */
+document.querySelector("nav").addEventListener("click", e => {
+  const b = e.target.closest("button[data-tab]");
+  if(!b) return;
+  tab = b.dataset.tab;
+  openBook = null;
+  render();
+});
+
+app.addEventListener("click", e => {
+  const b = e.target.closest("[data-act]");
+  if(!b) return;
+  const act = b.dataset.act, id = b.dataset.id;
+  const val = sel => { const el = document.querySelector(sel); return el ? el.value.trim() : ""; };
+  const numv = (sel, d) => { const v = Number(val(sel)); return Number.isFinite(v) ? v : d; };
+
+  if(act === "toggle"){ toggleTask(id); return; }
+
+  if(act === "regen"){
+    const n = generatePlan();
+    render();
+    alert(n ? n + "件のタスクを組み直しました。" : "割り当てる教材がありません。教材タブで単元を登録してください。");
+    return;
+  }
+
+  if(act === "addgoal"){
+    const date = val("#g-date");
+    if(!date){ alert("実施日を入れてください。"); return; }
+    db.goals.push({
+      id: uid(), name: val("#g-name") || "模試", examDate: date,
+      subject: val("#g-subj"), targetScore: numv("#g-tgt", 68), currentScore: numv("#g-cur", 60)
+    });
+    save(); render(); return;
+  }
+  if(act === "delgoal"){
+    db.goals = db.goals.filter(g => g.id !== id);
+    save(); render(); return;
+  }
+
+  if(act === "addbook"){
+    const title = val("#b-title");
+    if(!title){ alert("書名を入れてください。"); return; }
+    db.books.push({ id: uid(), title, subject: val("#b-subj"), units: [] });
+    save(); render(); return;
+  }
+  if(act === "delbook"){
+    if(!confirm("この参考書と単元をすべて削除します。よろしいですか。")) return;
+    db.books = db.books.filter(x => x.id !== id);
+    db.tasks = db.tasks.filter(t => t.bookId !== id);
+    save(); render(); return;
+  }
+
+  if(act === "addunit"){
+    const g = c => document.querySelector("." + c + '[data-book="' + id + '"]');
+    const name = g("u-name").value.trim();
+    if(!name){ alert("単元名を入れてください。"); return; }
+    const total = Math.max(1, Number(g("u-tp").value) || 1);
+    const cur = Math.min(total, Math.max(0, Number(g("u-cp").value) || 0));
+    const w = Math.min(5, Math.max(1, Number(g("u-w").value) || 3));
+    const book = db.books.find(x => x.id === id);
+    book.units = book.units || [];
+    book.units.push({ id: uid(), name, weight: w, status: cur > 0 ? "in_progress" : "todo", totalPages: total, currentPage: cur });
+    openBook = id;
+    save(); render();
+    const f = document.querySelector('.u-name[data-book="' + id + '"]');
+    if(f) f.focus();
+    return;
+  }
+  if(act === "delunit"){
+    const book = db.books.find(x => x.id === id);
+    if(book) book.units = (book.units||[]).filter(u => u.id !== b.dataset.uid);
+    db.tasks = db.tasks.filter(t => t.unitId !== b.dataset.uid);
+    save(); render(); return;
+  }
+
+  if(act === "rest"){
+    const d = Number(b.dataset.d);
+    const r = db.settings.restDays;
+    const i = r.indexOf(d);
+    if(i >= 0) r.splice(i,1); else r.push(d);
+    save(); render(); return;
+  }
+  if(act === "savecfg"){
+    db.settings.weekdayPages = Math.max(0, numv("#s-wd", 12));
+    db.settings.holidayPages = Math.max(0, numv("#s-hd", 24));
+    db.settings.maxTasksPerDay = Math.min(6, Math.max(1, numv("#s-mt", 3)));
+    db.settings.minChunk = Math.min(20, Math.max(1, numv("#s-mc", 3)));
+    db.settings.bufferDays = Math.min(60, Math.max(0, numv("#s-bd", 7)));
+    save();
+    const n = generatePlan();
+    tab = "today"; render();
+    alert("保存しました。" + (n ? n + "件のタスクを組み直しました。" : ""));
+    return;
+  }
+
+  if(act === "export"){
+    const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "gyakusan-" + today() + ".json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    return;
+  }
+  if(act === "import"){
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "application/json,.json";
+    inp.onchange = () => {
+      const f = inp.files[0]; if(!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try{
+          const d = JSON.parse(r.result);
+          if(!d || typeof d !== "object") throw new Error("形式が違います");
+          db = Object.assign(structuredClone(DEFAULTS), d, {
+            settings: Object.assign(structuredClone(DEFAULTS.settings), d.settings || {})
+          });
+          save(); render();
+          alert("読み込みました。");
+        }catch(err){
+          alert("読み込めませんでした。このアプリで書き出したJSONを選んでください。");
+        }
+      };
+      r.readAsText(f);
+    };
+    inp.click();
+    return;
+  }
+  if(act === "reset"){
+    if(!confirm("目標・教材・タスクをすべて消去します。元に戻せません。")) return;
+    db = structuredClone(DEFAULTS);
+    save(); tab = "today"; render();
+    return;
+  }
+});
+
+window.addEventListener("resize", () => {
+  if(tab === "plan"){ const cv = document.getElementById("meter"); if(cv) drawMeter(cv); }
+});
+
+render();
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(err => console.warn("SW登録に失敗", err));
+  });
+}
+</script>
+</body>
+</html>
