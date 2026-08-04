@@ -2,7 +2,7 @@
    役割はオフライン動作のみ。学習データはページ側の LocalStorage にあり、
    ここでは一切扱わない。 */
 
-const CACHE = "gyakusan-v1";
+const CACHE = "gyakusan-v2";
 const ASSETS = [
   "./",
   "./index.html",
